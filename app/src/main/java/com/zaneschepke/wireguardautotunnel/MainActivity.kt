@@ -17,10 +17,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -80,11 +82,11 @@ import com.zaneschepke.wireguardautotunnel.util.extensions.*
 import com.zaneschepke.wireguardautotunnel.viewmodel.*
 import dagger.hilt.android.AndroidEntryPoint
 import de.raphaelebner.roomdatabasebackup.core.RoomBackup
+import java.util.*
+import javax.inject.Inject
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import xyz.teamgravity.pin_lock_compose.PinManager
-import java.util.*
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -134,7 +136,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            val navState by navController.currentBackStackEntryAsNavbarState(viewModel)
+            val navState by
+                navController.currentBackStackEntryAsNavbarState(viewModel, navController)
             val snackbar = remember { SnackbarHostState() }
             var showVpnPermissionDialog by remember { mutableStateOf(false) }
             var vpnPermissionDenied by remember { mutableStateOf(false) }
@@ -246,6 +249,10 @@ class MainActivity : AppCompatActivity() {
                             bottomBar = {
                                 BottomNavbar(appState.isAutoTunnelActive, navState, navController)
                             },
+                            modifier =
+                                Modifier.pointerInput(Unit) {
+                                    detectTapGestures { viewModel.clearSelectedTunnels() }
+                                },
                         ) { padding ->
                             Box(
                                 modifier =

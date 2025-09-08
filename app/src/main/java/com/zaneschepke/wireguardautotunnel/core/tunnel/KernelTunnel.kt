@@ -2,6 +2,7 @@ package com.zaneschepke.wireguardautotunnel.core.tunnel
 
 import com.wireguard.android.backend.Backend
 import com.wireguard.android.backend.BackendException
+import com.wireguard.android.backend.Tunnel as WgTunnel
 import com.zaneschepke.wireguardautotunnel.core.service.ServiceManager
 import com.zaneschepke.wireguardautotunnel.di.ApplicationScope
 import com.zaneschepke.wireguardautotunnel.di.Kernel
@@ -14,6 +15,8 @@ import com.zaneschepke.wireguardautotunnel.domain.state.TunnelStatistics
 import com.zaneschepke.wireguardautotunnel.domain.state.WireGuardStatistics
 import com.zaneschepke.wireguardautotunnel.util.extensions.asTunnelState
 import com.zaneschepke.wireguardautotunnel.util.extensions.toBackendCoreException
+import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
@@ -22,9 +25,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.concurrent.ConcurrentHashMap
-import javax.inject.Inject
-import com.wireguard.android.backend.Tunnel as WgTunnel
 
 class KernelTunnel
 @Inject
@@ -51,7 +51,7 @@ constructor(
         }
 
         try {
-            updateTunnelStatus(tunnelConf, TunnelStatus.Starting)
+            updateTunnelStatus(tunnelConf.id, TunnelStatus.Starting)
             backend.setState(runtimeTunnel, WgTunnel.State.UP, tunnelConf.toWgConfig())
         } catch (e: BackendException) {
             close(e.toBackendCoreException())
@@ -67,7 +67,7 @@ constructor(
             try {
                 backend.setState(runtimeTunnel, WgTunnel.State.DOWN, null)
             } catch (e: BackendException) {
-                errors.tryEmit(tunnelConf to e.toBackendCoreException())
+                errors.tryEmit(tunnelConf.tunName to e.toBackendCoreException())
             } finally {
                 consumerJob.cancel()
                 stateChannel.close()
@@ -78,12 +78,12 @@ constructor(
         }
     }
 
-    override fun getStatistics(tunnelConf: TunnelConf): TunnelStatistics? {
+    override fun getStatistics(tunnelId: Int): TunnelStatistics? {
         return try {
-            val runtimeTunnel = runtimeTunnels[tunnelConf.id] ?: return null
+            val runtimeTunnel = runtimeTunnels[tunnelId] ?: return null
             WireGuardStatistics(backend.getStatistics(runtimeTunnel))
         } catch (e: Exception) {
-            Timber.e(e, "Failed to get stats for ${tunnelConf.tunName}")
+            Timber.e(e, "Failed to get stats for $tunnelId")
             null
         }
     }
@@ -96,7 +96,11 @@ constructor(
         return BackendMode.Inactive
     }
 
+    override fun handleDnsReresolve(tunnelConf: TunnelConf): Boolean {
+        throw NotImplementedError()
+    }
+
     override suspend fun runningTunnelNames(): Set<String> {
-        return super.runningTunnelNames() + backend.runningTunnelNames
+        return backend.runningTunnelNames
     }
 }

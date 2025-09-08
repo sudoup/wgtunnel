@@ -9,10 +9,10 @@ import com.zaneschepke.wireguardautotunnel.di.ApplicationScope
 import com.zaneschepke.wireguardautotunnel.domain.repository.AppDataRepository
 import com.zaneschepke.wireguardautotunnel.util.Constants
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class RemoteControlReceiver : BroadcastReceiver() {
@@ -71,11 +71,11 @@ class RemoteControlReceiver : BroadcastReceiver() {
                 Action.STOP_TUNNEL -> {
                     val tunnelName =
                         intent.getStringExtra(EXTRA_TUN_NAME)
-                            ?: return@launch tunnelManager.stopTunnel()
+                            ?: return@launch tunnelManager.stopActiveTunnels()
                     val tunnel =
                         appDataRepository.tunnels.findByTunnelName(tunnelName)
-                            ?: return@launch tunnelManager.stopTunnel()
-                    tunnelManager.stopTunnel(tunnel)
+                            ?: return@launch tunnelManager.stopActiveTunnels()
+                    tunnelManager.stopTunnel(tunnel.id)
                 }
                 Action.START_AUTO_TUNNEL -> serviceManager.startAutoTunnel()
                 Action.STOP_AUTO_TUNNEL -> serviceManager.stopAutoTunnel()

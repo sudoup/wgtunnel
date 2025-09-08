@@ -1,6 +1,5 @@
 package com.zaneschepke.wireguardautotunnel.util.extensions
 
-import androidx.compose.ui.graphics.Color
 import com.wireguard.android.backend.BackendException
 import com.zaneschepke.wireguardautotunnel.R
 import com.zaneschepke.wireguardautotunnel.domain.enums.BackendMode
@@ -8,8 +7,6 @@ import com.zaneschepke.wireguardautotunnel.domain.enums.HandshakeStatus
 import com.zaneschepke.wireguardautotunnel.domain.enums.TunnelStatus
 import com.zaneschepke.wireguardautotunnel.domain.events.BackendCoreException
 import com.zaneschepke.wireguardautotunnel.domain.state.TunnelStatistics
-import com.zaneschepke.wireguardautotunnel.ui.theme.SilverTree
-import com.zaneschepke.wireguardautotunnel.ui.theme.Straw
 import com.zaneschepke.wireguardautotunnel.util.Constants
 import com.zaneschepke.wireguardautotunnel.util.NumberUtils
 import com.zaneschepke.wireguardautotunnel.util.StringValue
@@ -75,19 +72,6 @@ fun com.wireguard.config.BadConfigException.asStringValue(): StringValue {
         }
     val location = this.location.name
     return StringValue.StringResource(R.string.config_error_template, reason, location)
-}
-
-fun TunnelStatistics?.asColor(): Color {
-    return this?.mapPeerStats()
-        ?.map { it.value?.handshakeStatus() }
-        ?.let { statuses ->
-            when {
-                statuses.all { it == HandshakeStatus.HEALTHY } -> SilverTree
-                statuses.any { it == HandshakeStatus.STALE } -> Straw
-                statuses.all { it == HandshakeStatus.NOT_STARTED } -> Color.Gray
-                else -> Color.Gray
-            }
-        } ?: Color.Gray
 }
 
 fun Config.toWgQuickString(): String {
@@ -168,6 +152,7 @@ fun org.amnezia.awg.backend.BackendException.toBackendCoreException(): BackendCo
             BackendCoreException.Unknown
         org.amnezia.awg.backend.BackendException.Reason.SERVICE_NOT_RUNNING ->
             BackendCoreException.ServiceNotRunning
+        org.amnezia.awg.backend.BackendException.Reason.UAPI_UPDATE_FAILED -> TODO()
     }
 }
 

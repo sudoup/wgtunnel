@@ -10,9 +10,9 @@ import com.zaneschepke.wireguardautotunnel.di.ApplicationScope
 import com.zaneschepke.wireguardautotunnel.domain.enums.NotificationAction
 import com.zaneschepke.wireguardautotunnel.domain.repository.TunnelRepository
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class NotificationActionReceiver : BroadcastReceiver() {
@@ -31,9 +31,9 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 NotificationAction.AUTO_TUNNEL_OFF.name -> serviceManager.stopAutoTunnel()
                 NotificationAction.TUNNEL_OFF.name -> {
                     val tunnelId = intent.getIntExtra(NotificationManager.EXTRA_ID, 0)
-                    if (tunnelId == STOP_ALL_TUNNELS_ID) return@launch tunnelManager.stopTunnel()
-                    val tunnel = tunnelRepository.getById(tunnelId)
-                    tunnelManager.stopTunnel(tunnel)
+                    if (tunnelId == STOP_ALL_TUNNELS_ID)
+                        return@launch tunnelManager.stopActiveTunnels()
+                    tunnelRepository.getById(tunnelId)?.let { tunnelManager.stopTunnel(it.id) }
                 }
             }
         }

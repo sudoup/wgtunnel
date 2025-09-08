@@ -15,6 +15,10 @@ import com.zaneschepke.wireguardautotunnel.util.extensions.asAmBackendMode
 import com.zaneschepke.wireguardautotunnel.util.extensions.asBackendMode
 import com.zaneschepke.wireguardautotunnel.util.extensions.asTunnelState
 import com.zaneschepke.wireguardautotunnel.util.extensions.toBackendCoreException
+import java.io.IOException
+import java.util.*
+import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
@@ -25,17 +29,13 @@ import kotlinx.coroutines.launch
 import org.amnezia.awg.backend.Backend
 import org.amnezia.awg.backend.BackendException
 import org.amnezia.awg.backend.ProxyGoBackend
+import org.amnezia.awg.backend.Tunnel as AwgTunnel
 import org.amnezia.awg.config.Config
 import org.amnezia.awg.config.DnsSettings
 import org.amnezia.awg.config.proxy.HttpProxy
 import org.amnezia.awg.config.proxy.Proxy
 import org.amnezia.awg.config.proxy.Socks5Proxy
 import timber.log.Timber
-import java.io.IOException
-import java.util.*
-import java.util.concurrent.ConcurrentHashMap
-import javax.inject.Inject
-import org.amnezia.awg.backend.Tunnel as AwgTunnel
 
 class UserspaceTunnel
 @Inject
@@ -59,7 +59,7 @@ constructor(
         }
 
         try {
-            updateTunnelStatus(tunnelConf, TunnelStatus.Starting)
+            updateTunnelStatus(tunnelConf.id, TunnelStatus.Starting)
 
             val proxies: List<Proxy> =
                 when (backend) {
@@ -121,7 +121,7 @@ constructor(
             try {
                 backend.setState(runtimeTunnel, AwgTunnel.State.DOWN, null)
             } catch (e: BackendException) {
-                errors.tryEmit(tunnelConf to e.toBackendCoreException())
+                errors.tryEmit(tunnelConf.tunName to e.toBackendCoreException())
             } finally {
                 consumerJob.cancel()
                 stateChannel.close()
@@ -148,16 +148,22 @@ constructor(
         return backend.backendMode.asBackendMode()
     }
 
-    override suspend fun runningTunnelNames(): Set<String> {
-        return super.runningTunnelNames() + backend.runningTunnelNames
+    override fun handleDnsReresolve(tunnelConf: TunnelConf): Boolean {
+        val tunnel =
+            runtimeTunnels.get(tunnelConf.id) ?: throw BackendCoreException.ServiceNotRunning
+        return backend.resolveDDNS(tunnelConf.toAmConfig(), tunnel.isIpv4ResolutionPreferred)
     }
 
-    override fun getStatistics(tunnelConf: TunnelConf): TunnelStatistics? {
+    override suspend fun runningTunnelNames(): Set<String> {
+        return backend.runningTunnelNames
+    }
+
+    override fun getStatistics(tunnelId: Int): TunnelStatistics? {
         return try {
-            val runtimeTunnel = runtimeTunnels[tunnelConf.id] ?: return null
+            val runtimeTunnel = runtimeTunnels[tunnelId] ?: return null
             AmneziaStatistics(backend.getStatistics(runtimeTunnel))
         } catch (e: Exception) {
-            Timber.e(e, "Failed to get stats for ${tunnelConf.tunName}")
+            Timber.e(e, "Failed to get stats for $tunnelId")
             null
         }
     }

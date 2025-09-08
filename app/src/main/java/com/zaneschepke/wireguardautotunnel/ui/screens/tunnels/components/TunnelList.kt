@@ -18,21 +18,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.zaneschepke.wireguardautotunnel.core.tunnel.getValueById
 import com.zaneschepke.wireguardautotunnel.domain.state.TunnelState
 import com.zaneschepke.wireguardautotunnel.ui.LocalIsAndroidTV
 import com.zaneschepke.wireguardautotunnel.ui.navigation.Route
+import com.zaneschepke.wireguardautotunnel.ui.state.SharedAppUiState
 import com.zaneschepke.wireguardautotunnel.ui.state.TunnelsUiState
 import com.zaneschepke.wireguardautotunnel.util.extensions.openWebUrl
 import com.zaneschepke.wireguardautotunnel.viewmodel.SharedAppViewModel
-import com.zaneschepke.wireguardautotunnel.viewmodel.TunnelsViewModel
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TunnelList(
     tunnelsState: TunnelsUiState,
+    sharedState: SharedAppUiState,
     modifier: Modifier = Modifier,
-    viewModel: TunnelsViewModel,
     sharedViewModel: SharedAppViewModel,
     navController: NavController,
 ) {
@@ -48,7 +47,7 @@ fun TunnelList(
             modifier
                 .pointerInput(Unit) {
                     if (tunnelsState.tunnels.isEmpty()) return@pointerInput
-                    viewModel.clearSelectedTunnels()
+                    sharedViewModel.clearSelectedTunnels()
                 }
                 .overscroll(rememberOverscrollEffect()),
         state = lazyListState,
@@ -62,11 +61,11 @@ fun TunnelList(
         items(tunnelsState.tunnels, key = { it.id }) { tunnel ->
             val tunnelState =
                 remember(tunnelsState.activeTunnels) {
-                    tunnelsState.activeTunnels.getValueById(tunnel.id) ?: TunnelState()
+                    tunnelsState.activeTunnels[tunnel.id] ?: TunnelState()
                 }
             val selected =
-                remember(tunnelsState.selectedTunnels) {
-                    tunnelsState.selectedTunnels.any { it.id == tunnel.id }
+                remember(sharedState.selectedTunnels) {
+                    sharedState.selectedTunnels.any { it.id == tunnel.id }
                 }
             TunnelRowItem(
                 state = tunnelState,
@@ -74,7 +73,9 @@ fun TunnelList(
                 tunnel = tunnel,
                 tunnelState = tunnelState,
                 onTvClick = { navController.navigate(Route.TunnelOptions(tunnel.id)) },
-                onToggleSelectedTunnel = { tunnel -> viewModel.toggleSelectedTunnel(tunnel.id) },
+                onToggleSelectedTunnel = { tunnel ->
+                    sharedViewModel.toggleSelectedTunnel(tunnel.id)
+                },
                 onSwitchClick = { checked ->
                     if (checked) sharedViewModel.startTunnel(tunnel)
                     else sharedViewModel.stopTunnel(tunnel)
@@ -86,14 +87,14 @@ fun TunnelList(
                     if (!isTv)
                         Modifier.combinedClickable(
                             onClick = {
-                                if (tunnelsState.selectedTunnels.isNotEmpty()) {
-                                    viewModel.toggleSelectedTunnel(tunnel.id)
+                                if (sharedState.selectedTunnels.isNotEmpty()) {
+                                    sharedViewModel.toggleSelectedTunnel(tunnel.id)
                                 } else {
                                     navController.navigate(Route.TunnelOptions(tunnel.id))
-                                    viewModel.clearSelectedTunnels()
+                                    sharedViewModel.clearSelectedTunnels()
                                 }
                             },
-                            onLongClick = { viewModel.toggleSelectedTunnel(tunnel.id) },
+                            onLongClick = { sharedViewModel.toggleSelectedTunnel(tunnel.id) },
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                         )
