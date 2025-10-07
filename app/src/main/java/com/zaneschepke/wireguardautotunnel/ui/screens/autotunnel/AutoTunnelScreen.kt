@@ -44,7 +44,7 @@ fun AutoTunnelScreen(viewModel: AutoTunnelViewModel = hiltViewModel()) {
 
     LaunchedEffect(autoTunnelState.stateInitialized) {
         if (!autoTunnelState.isLocationDisclosureShown && autoTunnelState.stateInitialized) {
-            navController.navigate(Route.LocationDisclosure)
+            navController.push(Route.LocationDisclosure)
         }
     }
 
@@ -96,10 +96,7 @@ fun AutoTunnelScreen(viewModel: AutoTunnelViewModel = hiltViewModel()) {
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
         modifier =
-            Modifier.fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 24.dp)
-                .padding(horizontal = 12.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
     ) {
         WarningBanner(
             stringResource(R.string.location_services_not_detected),
@@ -165,18 +162,14 @@ fun AutoTunnelScreen(viewModel: AutoTunnelViewModel = hiltViewModel()) {
                     )
                 )
         )
-        SurfaceSelectionGroupButton(
-            items = wifiTunnelingItems(autoTunnelState, viewModel, navController)
-        )
+        SurfaceSelectionGroupButton(items = wifiTunnelingItems(autoTunnelState, viewModel))
         SectionDivider()
         SurfaceSelectionGroupButton(items = networkTunnelingItems(autoTunnelState, viewModel))
         SectionDivider()
         SurfaceSelectionGroupButton(
             items =
                 listOf(
-                    AdvancedSettingsItem(
-                        onClick = { navController.navigate(Route.AdvancedAutoTunnel) }
-                    )
+                    AdvancedSettingsItem(onClick = { navController.push(Route.AdvancedAutoTunnel) })
                 )
         )
     }

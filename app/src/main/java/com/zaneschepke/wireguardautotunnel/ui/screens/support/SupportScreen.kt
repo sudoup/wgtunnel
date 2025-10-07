@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zaneschepke.wireguardautotunnel.BuildConfig
 import com.zaneschepke.wireguardautotunnel.R
@@ -38,7 +39,7 @@ import com.zaneschepke.wireguardautotunnel.util.extensions.requestInstallPackage
 import com.zaneschepke.wireguardautotunnel.viewmodel.SupportViewModel
 
 @Composable
-fun SupportScreen(viewModel: SupportViewModel) {
+fun SupportScreen(viewModel: SupportViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val navController = LocalNavController.current
     val supportState by viewModel.container.stateFlow.collectAsStateWithLifecycle()
@@ -126,21 +127,17 @@ fun SupportScreen(viewModel: SupportViewModel) {
     Column(
         modifier =
             Modifier.fillMaxSize()
-                .padding(vertical = 24.dp)
-                .padding(horizontal = 12.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
     ) {
-        GroupLabel(
-            stringResource(R.string.thank_you),
-            modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
-        )
+        GroupLabel(stringResource(R.string.thank_you), modifier = Modifier.padding(bottom = 12.dp))
         UpdateSection { viewModel.checkForUpdate() }
         SectionDivider()
-        DonateSection { navController.navigate(Route.Donate) }
+        DonateSection { navController.push(Route.Donate) }
         SectionDivider()
-        GeneralSupportOptions(navController)
+        GeneralSupportOptions()
         SectionDivider()
         ContactSupportOptions(context)
     }

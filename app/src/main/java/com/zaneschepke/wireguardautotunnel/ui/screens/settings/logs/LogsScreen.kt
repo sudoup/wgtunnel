@@ -2,7 +2,6 @@ package com.zaneschepke.wireguardautotunnel.ui.screens.settings.logs
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -12,7 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zaneschepke.wireguardautotunnel.R
@@ -69,16 +67,22 @@ fun LogsScreen(viewModel: LoggerViewModel = hiltViewModel()) {
     }
 
     if (showLogsSheet) {
-        LogsBottomSheet({ viewModel.exportLogs() }, { viewModel.deleteLogs() }) {
+        LogsBottomSheet(
+            { uri ->
+                viewModel.exportLogs(uri)
+                showLogsSheet = false
+            },
+            {
+                viewModel.deleteLogs()
+                showLogsSheet = false
+            },
+        ) {
             showLogsSheet = false
         }
     }
 
     if (loggerState.messages.isEmpty()) {
-        return Box(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+        return Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 text = stringResource(R.string.nothing_here_yet),
                 fontStyle = FontStyle.Italic,
@@ -91,6 +95,6 @@ fun LogsScreen(viewModel: LoggerViewModel = hiltViewModel()) {
     LogList(
         logs = loggerState.messages,
         lazyColumnListState = lazyColumnListState,
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        modifier = Modifier.fillMaxSize(),
     )
 }

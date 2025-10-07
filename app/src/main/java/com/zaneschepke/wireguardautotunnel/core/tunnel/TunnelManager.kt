@@ -1,6 +1,7 @@
 package com.zaneschepke.wireguardautotunnel.core.tunnel
 
 import com.zaneschepke.wireguardautotunnel.core.service.ServiceManager
+import com.zaneschepke.wireguardautotunnel.data.entity.TunnelConfig
 import com.zaneschepke.wireguardautotunnel.data.model.AppMode
 import com.zaneschepke.wireguardautotunnel.di.*
 import com.zaneschepke.wireguardautotunnel.domain.enums.BackendMode
@@ -21,9 +22,9 @@ import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
-import org.amnezia.awg.crypto.Key
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalAtomicApi::class)
@@ -41,6 +42,7 @@ constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : TunnelProvider {
 
+    private val monitoringMutex = Mutex()
     private val monitoringJobs = ConcurrentHashMap<Int, Job>()
 
     private data class SideEffectState(
@@ -55,8 +57,27 @@ constructor(
         val condition: (SideEffectState) -> Boolean,
     )
 
-    private val sideEffectChannelFlow =
-        MutableStateFlow<Channel<SideEffectState>>(Channel(Channel.CONFLATED))
+    private val settings: StateFlow<GeneralSettings> =
+        settingsRepository.flow
+            .filterNotNull()
+            .stateIn(
+                scope = applicationScope.plus(ioDispatcher),
+                started = SharingStarted.Eagerly,
+                initialValue = GeneralSettings(),
+            )
+
+    private val tunnels: StateFlow<List<TunnelConf>> =
+        tunnelsRepository.flow.stateIn(
+            scope = applicationScope.plus(ioDispatcher),
+            started = SharingStarted.Eagerly,
+            initialValue = emptyList(),
+        )
+
+    private suspend fun getSettings(): GeneralSettings =
+        settingsRepository.flow.filterNotNull().first { it != GeneralSettings() }
+
+    private suspend fun getTunnels(): List<TunnelConf> =
+        tunnelsRepository.flow.first { it.isNotEmpty() }
 
     private val tunnelProviderFlow: StateFlow<TunnelProvider> = run {
         val currentBackend = AtomicReference(userspaceTunnel)
@@ -105,61 +126,9 @@ constructor(
     override val activeTunnels: StateFlow<Map<Int, TunnelState>> = run {
         val activeTunsReference: AtomicReference<Map<Int, TunnelState>> =
             AtomicReference(emptyMap())
+
         tunnelProviderFlow
             .flatMapLatest { backend ->
-                // Create a new channel for each backend to reset side-effect processing
-                val newChannel = Channel<SideEffectState>(Channel.CONFLATED)
-                sideEffectChannelFlow.value = newChannel
-
-                val sideEffects =
-                    listOf(
-                        SideEffectWithCondition(
-                            effect = { s ->
-                                handleTunnelServiceChange(s.settings.appMode, s.activeTuns)
-                            },
-                            condition = { s -> s.activeTuns.size != s.previouslyActive.size },
-                        ),
-                        SideEffectWithCondition(
-                            effect = { s ->
-                                handleTunnelsActiveChange(s.previouslyActive, s.activeTuns, s.tuns)
-                            },
-                            condition = { s -> s.activeTuns.size != s.previouslyActive.size },
-                        ),
-                        // TODO Not for kernel mode for now
-                        SideEffectWithCondition(
-                            effect = { s -> handleTunnelMonitoringChanges(s.activeTuns, s.tuns) },
-                            condition = { s ->
-                                s.tuns.any {
-                                    it.restartOnPingFailure && s.activeTuns.keys.contains(it.id)
-                                } && s.settings.appMode != AppMode.KERNEL
-                            },
-                        ),
-                        SideEffectWithCondition(
-                            effect = { s ->
-                                handleFullTunnelMonitoring(s.activeTuns, s.tuns, s.settings)
-                            },
-                            condition = { s -> s.activeTuns.keys != s.previouslyActive.keys },
-                        ),
-                    )
-
-                applicationScope.launch(ioDispatcher) {
-                    for (state in newChannel) {
-                        supervisorScope {
-                            sideEffects
-                                .filter { it.condition(state) }
-                                .forEach { sideEffect ->
-                                    launch {
-                                        try {
-                                            sideEffect.effect(state)
-                                        } catch (e: Exception) {
-                                            Timber.e(e, "Side effect failed")
-                                        }
-                                    }
-                                }
-                        }
-                    }
-                }
-
                 combine(
                     backend.activeTunnels,
                     tunnelsRepository.flow,
@@ -171,9 +140,67 @@ constructor(
             .onStart { handleStateRestore() }
             .onEach { (activeTuns, tuns, settings) ->
                 val previouslyActive = activeTunsReference.exchange(activeTuns)
-                sideEffectChannelFlow.value.trySend(
-                    SideEffectState(activeTuns, tuns, settings, previouslyActive)
-                )
+                val state = SideEffectState(activeTuns, tuns, settings, previouslyActive)
+
+                applicationScope.launch(ioDispatcher) {
+                    supervisorScope {
+                        val sideEffects =
+                            listOf(
+                                SideEffectWithCondition(
+                                    effect = { s ->
+                                        handleTunnelServiceChange(s.settings.appMode, s.activeTuns)
+                                    },
+                                    condition = { s ->
+                                        s.activeTuns.size != s.previouslyActive.size
+                                    },
+                                ),
+                                SideEffectWithCondition(
+                                    effect = { s ->
+                                        handleTunnelsActiveChange(
+                                            s.previouslyActive,
+                                            s.activeTuns,
+                                            s.tuns,
+                                        )
+                                    },
+                                    condition = { s ->
+                                        s.activeTuns.size != s.previouslyActive.size
+                                    },
+                                ),
+                                // TODO Not for kernel mode for now
+                                SideEffectWithCondition(
+                                    effect = { s ->
+                                        handleTunnelMonitoringChanges(s.activeTuns, s.tuns)
+                                    },
+                                    condition = { s ->
+                                        s.tuns.any {
+                                            it.restartOnPingFailure &&
+                                                s.activeTuns.keys.contains(it.id)
+                                        } && s.settings.appMode != AppMode.KERNEL
+                                    },
+                                ),
+                                SideEffectWithCondition(
+                                    effect = { s ->
+                                        handleFullTunnelMonitoring(s.activeTuns, s.tuns, s.settings)
+                                    },
+                                    condition = { s ->
+                                        s.activeTuns.keys != s.previouslyActive.keys
+                                    },
+                                ),
+                            )
+
+                        sideEffects
+                            .filter { it.condition(state) }
+                            .forEach { sideEffect ->
+                                launch {
+                                    try {
+                                        sideEffect.effect(state)
+                                    } catch (e: Exception) {
+                                        Timber.e(e, "Side effect failed")
+                                    }
+                                }
+                            }
+                    }
+                }
             }
             .map { (activeTuns, _, _) -> activeTuns }
             .stateIn(
@@ -208,14 +235,34 @@ constructor(
     }
 
     override suspend fun startTunnel(tunnelConf: TunnelConf) {
-        // for VPN Mode, we need to stop active tunnels as we can only have one active at a time
-        if (activeTunnels.value.isNotEmpty() && tunnelProviderFlow.value == userspaceTunnel)
+        val provider = tunnelProviderFlow.value
+        val isKernel = provider is KernelTunnel
+
+        if (!isKernel && activeTunnels.value.isNotEmpty()) {
             stopActiveTunnels()
-        tunnelProviderFlow.value.startTunnel(tunnelConf)
+            withTimeoutOrNull(BaseTunnel.STARTUP_TIMEOUT_MS) {
+                activeTunnels.first { it.isEmpty() }
+            } ?: run { activeTunnels.value.keys.forEach { id -> provider.forceStopTunnel(id) } }
+        }
+        val runConfig =
+            tunnelConf.run {
+                if (getSettings().isTunnelGlobalsEnabled) {
+                    val globalTunnel =
+                        getTunnels().firstOrNull { it.tunName == TunnelConfig.GLOBAL_CONFIG_NAME }
+                            ?: return@run this
+                    return@run copyWithGlobalValues(globalTunnel)
+                }
+                this
+            }
+        tunnelProviderFlow.value.startTunnel(runConfig)
     }
 
     override suspend fun stopTunnel(tunnelId: Int) {
         tunnelProviderFlow.value.stopTunnel(tunnelId)
+    }
+
+    override suspend fun forceStopTunnel(tunnelId: Int) {
+        tunnelProviderFlow.value.forceStopTunnel(tunnelId)
     }
 
     override suspend fun stopActiveTunnels() {
@@ -242,7 +289,7 @@ constructor(
         tunnelId: Int,
         status: TunnelStatus?,
         stats: TunnelStatistics?,
-        pingStates: Map<Key, PingState>?,
+        pingStates: Map<String, PingState>?,
         logHealthState: LogHealthState?,
     ) {
         tunnelProviderFlow.value.updateTunnelStatus(
@@ -375,29 +422,39 @@ constructor(
         activeTuns: Map<Int, TunnelState>,
         configs: List<TunnelConf>,
         settings: GeneralSettings,
-    ) {
-        val activeIds = activeTuns.keys
-        val obsoleteIds = monitoringJobs.keys - activeIds
-        obsoleteIds.forEach { id ->
-            monitoringJobs[id]?.cancel()
-            monitoringJobs.remove(id)
+    ) =
+        monitoringMutex.withLock {
+            val activeIds = activeTuns.keys.toSet()
+            val currentJobs = monitoringJobs.keys.toSet()
+            val obsoleteIds = currentJobs - activeIds
+
+            Timber.d(
+                "Monitoring: Active IDs: $activeIds, Obsolete IDs: $obsoleteIds, Total jobs before: ${monitoringJobs.size}"
+            )
+
+            obsoleteIds.forEach { id ->
+                monitoringJobs[id]?.cancel()
+                monitoringJobs.remove(id)
+            }
+
+            activeIds.forEach { id ->
+                if (monitoringJobs.containsKey(id)) return@forEach // Skip if already monitored
+                val config = configs.find { it.id == id } ?: return@forEach
+                val tunStateFlow =
+                    activeTunnels.map { it[id] }.stateIn(applicationScope + ioDispatcher)
+                val newJob =
+                    applicationScope.launch(ioDispatcher) {
+                        tunnelMonitor.startMonitoring(
+                            id,
+                            withLogs = settings.appMode != AppMode.KERNEL,
+                            tunStateFlow = tunStateFlow,
+                            getStatistics = { tunnelId -> getStatistics(tunnelId) },
+                            updateTunnelStatus = { tid, status, stats, pings, logHealth ->
+                                updateTunnelStatus(tid, null, stats, pings, logHealth)
+                            },
+                        )
+                    }
+                monitoringJobs[id] = newJob
+            }
         }
-        activeIds.forEach { id ->
-            if (monitoringJobs.contains(id)) return@forEach
-            configs.find { it.id == id } ?: return@forEach
-            val tunStateFlow = activeTunnels.map { it[id] }.stateIn(applicationScope + ioDispatcher)
-            monitoringJobs[id] =
-                applicationScope.launch(ioDispatcher) {
-                    tunnelMonitor.startMonitoring(
-                        id,
-                        withLogs = settings.appMode != AppMode.KERNEL,
-                        tunStateFlow = tunStateFlow,
-                        getStatistics = { tunnelId -> getStatistics(tunnelId) },
-                        updateTunnelStatus = { tid, status, stats, pings, logHealth ->
-                            updateTunnelStatus(tid, null, stats, pings, logHealth)
-                        },
-                    )
-                }
-        }
-    }
 }

@@ -25,6 +25,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zaneschepke.wireguardautotunnel.R
 import com.zaneschepke.wireguardautotunnel.ui.LocalIsAndroidTV
@@ -39,11 +40,13 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
-fun SortScreen(viewModel: TunnelsViewModel) {
+fun SortScreen(viewModel: TunnelsViewModel = hiltViewModel()) {
     val sharedViewModel = LocalSharedVm.current
     val tunnelsState by viewModel.container.stateFlow.collectAsStateWithLifecycle()
     val hapticFeedback = LocalHapticFeedback.current
     val isTv = LocalIsAndroidTV.current
+
+    if (!tunnelsState.stateInitialized) return
 
     var sortAscending by rememberSaveable { mutableStateOf<Boolean?>(null) }
     var editableTunnels by rememberSaveable { mutableStateOf(tunnelsState.tunnels) }
@@ -88,8 +91,7 @@ fun SortScreen(viewModel: TunnelsViewModel) {
         verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.Top),
         modifier =
             Modifier.pointerInput(Unit) { if (tunnelsState.tunnels.isEmpty()) return@pointerInput }
-                .overscroll(rememberOverscrollEffect())
-                .padding(horizontal = 16.dp, vertical = 24.dp),
+                .overscroll(rememberOverscrollEffect()),
         state = lazyListState,
         userScrollEnabled = true,
         reverseLayout = false,

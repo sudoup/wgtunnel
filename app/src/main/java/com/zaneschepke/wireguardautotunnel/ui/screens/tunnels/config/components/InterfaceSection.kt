@@ -2,7 +2,6 @@ package com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.config.components
 
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -20,6 +19,7 @@ import java.util.*
 
 @Composable
 fun InterfaceSection(
+    isGlobalConfig: Boolean,
     configProxy: ConfigProxy,
     tunnelName: String,
     isTunnelNameTaken: Boolean,
@@ -32,6 +32,7 @@ fun InterfaceSection(
     var showAmneziaValues by rememberSaveable {
         mutableStateOf(configProxy.`interface`.isAmneziaEnabled())
     }
+
     var showScripts by rememberSaveable { mutableStateOf(configProxy.hasScripts()) }
     var isDropDownExpanded by rememberSaveable { mutableStateOf(false) }
     val isAmneziaCompatibilitySet =
@@ -48,10 +49,10 @@ fun InterfaceSection(
         onInterfaceChange(interfaceProxy)
     }
 
-    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
+    Surface(color = MaterialTheme.colorScheme.surface) {
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(horizontal = 16.dp).focusGroup(),
+            modifier = Modifier.focusGroup(),
         ) {
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -82,17 +83,19 @@ fun InterfaceSection(
                     },
                 )
             }
-            ConfigurationTextBox(
-                value = tunnelName,
-                onValueChange = onTunnelNameChange,
-                label = stringResource(R.string.name),
-                isError = isTunnelNameTaken,
-                hint =
-                    stringResource(R.string.hint_template, stringResource(R.string.tunnel_name))
-                        .lowercase(Locale.getDefault()),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (!isGlobalConfig)
+                ConfigurationTextBox(
+                    value = tunnelName,
+                    onValueChange = onTunnelNameChange,
+                    label = stringResource(R.string.name),
+                    isError = isTunnelNameTaken,
+                    hint =
+                        stringResource(R.string.hint_template, stringResource(R.string.tunnel_name))
+                            .lowercase(Locale.getDefault()),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             InterfaceFields(
+                isGlobalConfig,
                 interfaceState = configProxy.`interface`,
                 showScripts = showScripts,
                 showAmneziaValues = showAmneziaValues,

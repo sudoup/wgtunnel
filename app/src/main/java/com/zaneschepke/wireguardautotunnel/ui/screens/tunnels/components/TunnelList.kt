@@ -4,7 +4,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -16,10 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import com.zaneschepke.wireguardautotunnel.domain.state.TunnelState
 import com.zaneschepke.wireguardautotunnel.ui.LocalIsAndroidTV
+import com.zaneschepke.wireguardautotunnel.ui.LocalNavController
 import com.zaneschepke.wireguardautotunnel.ui.navigation.Route
 import com.zaneschepke.wireguardautotunnel.ui.state.SharedAppUiState
 import com.zaneschepke.wireguardautotunnel.ui.state.TunnelsUiState
@@ -33,8 +31,8 @@ fun TunnelList(
     sharedState: SharedAppUiState,
     modifier: Modifier = Modifier,
     sharedViewModel: SharedAppViewModel,
-    navController: NavController,
 ) {
+    val navController = LocalNavController.current
     val isTv = LocalIsAndroidTV.current
     val context = LocalContext.current
 
@@ -42,7 +40,6 @@ fun TunnelList(
 
     LazyColumn(
         horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.Top),
         modifier =
             modifier
                 .pointerInput(Unit) {
@@ -71,8 +68,7 @@ fun TunnelList(
                 state = tunnelState,
                 isSelected = selected,
                 tunnel = tunnel,
-                tunnelState = tunnelState,
-                onTvClick = { navController.navigate(Route.TunnelOptions(tunnel.id)) },
+                onTvClick = { navController.push(Route.TunnelOptions(tunnel.id)) },
                 onToggleSelectedTunnel = { tunnel ->
                     sharedViewModel.toggleSelectedTunnel(tunnel.id)
                 },
@@ -84,13 +80,13 @@ fun TunnelList(
                 isPingEnabled = tunnelsState.isPingEnabled,
                 showDetailedStats = tunnelsState.showPingStats,
                 modifier =
-                    if (!isTv)
+                    (if (!isTv)
                         Modifier.combinedClickable(
                             onClick = {
                                 if (sharedState.selectedTunnels.isNotEmpty()) {
                                     sharedViewModel.toggleSelectedTunnel(tunnel.id)
                                 } else {
-                                    navController.navigate(Route.TunnelOptions(tunnel.id))
+                                    navController.push(Route.TunnelOptions(tunnel.id))
                                     sharedViewModel.clearSelectedTunnels()
                                 }
                             },
@@ -98,7 +94,7 @@ fun TunnelList(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                         )
-                    else Modifier,
+                    else Modifier),
             )
         }
     }

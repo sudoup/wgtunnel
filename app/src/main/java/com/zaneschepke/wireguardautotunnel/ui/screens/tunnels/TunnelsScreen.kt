@@ -3,7 +3,6 @@ package com.zaneschepke.wireguardautotunnel.ui.screens.tunnels
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -12,7 +11,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -34,7 +33,7 @@ import com.zaneschepke.wireguardautotunnel.viewmodel.TunnelsViewModel
 import org.orbitmvi.orbit.compose.collectSideEffect
 
 @Composable
-fun TunnelsScreen(viewModel: TunnelsViewModel) {
+fun TunnelsScreen(viewModel: TunnelsViewModel = hiltViewModel()) {
     val sharedViewModel = LocalSharedVm.current
     val navController = LocalNavController.current
     val clipboard = rememberClipboardHelper()
@@ -126,7 +125,7 @@ fun TunnelsScreen(viewModel: TunnelsViewModel) {
                     if (result != null) viewModel.importFromClipboard(result)
                 }
             },
-            onManualImportClick = { navController.navigate(Route.Config(null)) },
+            onManualImportClick = { navController.push(Route.Config(null)) },
             onUrlClick = { showUrlDialog = true },
         )
     }
@@ -141,11 +140,5 @@ fun TunnelsScreen(viewModel: TunnelsViewModel) {
         )
     }
 
-    TunnelList(
-        tunnelsState,
-        sharedState,
-        modifier = Modifier.fillMaxSize().padding(vertical = 24.dp).padding(horizontal = 12.dp),
-        sharedViewModel,
-        navController,
-    )
+    TunnelList(tunnelsState, sharedState, modifier = Modifier.fillMaxSize(), sharedViewModel)
 }

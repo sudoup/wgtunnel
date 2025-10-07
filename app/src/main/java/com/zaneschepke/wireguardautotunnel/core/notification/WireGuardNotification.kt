@@ -51,7 +51,8 @@ class WireGuardNotification @Inject constructor(@ApplicationContext override val
                     PendingIntent.getActivity(
                         context,
                         0,
-                        Intent(context, MainActivity::class.java),
+                        Intent(context, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
                         PendingIntent.FLAG_IMMUTABLE,
                     )
                 )
@@ -94,12 +95,12 @@ class WireGuardNotification @Inject constructor(@ApplicationContext override val
         val pendingIntent =
             PendingIntent.getBroadcast(
                 context,
-                0,
+                extraId ?: 0,
                 Intent(context, NotificationActionReceiver::class.java).apply {
                     action = notificationAction.name
                     if (extraId != null) putExtra(EXTRA_ID, extraId)
                 },
-                PendingIntent.FLAG_IMMUTABLE,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         return NotificationCompat.Action.Builder(
                 R.drawable.ic_notification,

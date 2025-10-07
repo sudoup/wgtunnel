@@ -13,17 +13,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zaneschepke.wireguardautotunnel.ui.common.button.surface.SurfaceSelectionGroupButton
 import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.autotunnel.components.MobileDataTunnelItem
-import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.autotunnel.components.PingRestartItem
 import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.autotunnel.components.WifiTunnelItem
 import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.autotunnel.components.ethernetTunnelItem
 import com.zaneschepke.wireguardautotunnel.viewmodel.TunnelsViewModel
 
 @Composable
-fun TunnelAutoTunnelScreen(tunnelId: Int, viewModel: TunnelsViewModel) {
+fun TunnelAutoTunnelScreen(tunnelId: Int, viewModel: TunnelsViewModel = hiltViewModel()) {
     val tunnelsState by viewModel.container.stateFlow.collectAsStateWithLifecycle()
+
+    if (!tunnelsState.stateInitialized) return
 
     val tunnelConf by
         remember(tunnelsState.tunnels) {
@@ -34,21 +36,11 @@ fun TunnelAutoTunnelScreen(tunnelId: Int, viewModel: TunnelsViewModel) {
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
         modifier =
-            Modifier.fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 24.dp)
-                .padding(horizontal = 12.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
     ) {
         SurfaceSelectionGroupButton(
             items =
                 buildList {
-                    if (tunnelsState.isPingEnabled) {
-                        add(
-                            PingRestartItem(tunnelConf.restartOnPingFailure) {
-                                viewModel.setRestartOnPing(tunnelId, it)
-                            }
-                        )
-                    }
                     add(
                         MobileDataTunnelItem(tunnelConf.isMobileDataTunnel) {
                             viewModel.setMobileDataTunnel(tunnelId, it)

@@ -19,9 +19,9 @@ fun SplitTunnelContent(
     onAppSelectionToggle: (String, Boolean) -> Unit,
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.Top),
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
     ) {
         SplitOptionSelector(
             selectedOption = splitConfig.first,

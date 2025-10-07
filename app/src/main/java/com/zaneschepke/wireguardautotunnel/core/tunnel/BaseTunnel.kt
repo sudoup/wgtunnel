@@ -1,6 +1,7 @@
 package com.zaneschepke.wireguardautotunnel.core.tunnel
 
 import com.zaneschepke.wireguardautotunnel.di.ApplicationScope
+import com.zaneschepke.wireguardautotunnel.di.IoDispatcher
 import com.zaneschepke.wireguardautotunnel.domain.enums.BackendMode
 import com.zaneschepke.wireguardautotunnel.domain.enums.TunnelStatus
 import com.zaneschepke.wireguardautotunnel.domain.events.BackendCoreException
@@ -12,17 +13,20 @@ import com.zaneschepke.wireguardautotunnel.domain.state.TunnelState
 import com.zaneschepke.wireguardautotunnel.domain.state.TunnelStatistics
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.amnezia.awg.crypto.Key
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
-abstract class BaseTunnel(@ApplicationScope protected val applicationScope: CoroutineScope) :
-    TunnelProvider {
+abstract class BaseTunnel(
+    @ApplicationScope protected val applicationScope: CoroutineScope,
+    @IoDispatcher protected val ioDispatcher: CoroutineDispatcher,
+) : TunnelProvider {
 
     protected val errors = MutableSharedFlow<Pair<String, BackendCoreException>>()
     override val errorEvents = errors.asSharedFlow()
@@ -33,7 +37,7 @@ abstract class BaseTunnel(@ApplicationScope protected val applicationScope: Coro
     protected val activeTuns = MutableStateFlow<Map<Int, TunnelState>>(emptyMap())
     override val activeTunnels = activeTuns.asStateFlow()
 
-    private val tunJobs = ConcurrentHashMap<Int, Job>()
+    protected val tunJobs = ConcurrentHashMap<Int, Job>()
     private val tunMutex = Mutex()
     private val tunStatusMutex = Mutex()
 
@@ -43,6 +47,8 @@ abstract class BaseTunnel(@ApplicationScope protected val applicationScope: Coro
 
     abstract override fun getBackendMode(): BackendMode
 
+    abstract override suspend fun forceStopTunnel(tunnelId: Int)
+
     abstract override fun handleDnsReresolve(tunnelConf: TunnelConf): Boolean
 
     abstract override fun getStatistics(tunnelId: Int): TunnelStatistics?
@@ -51,11 +57,15 @@ abstract class BaseTunnel(@ApplicationScope protected val applicationScope: Coro
         tunnelId: Int,
         status: TunnelStatus?,
         stats: TunnelStatistics?,
-        pingStates: Map<Key, PingState>?,
+        pingStates: Map<String, PingState>?,
         logHealthState: LogHealthState?,
     ) {
         tunStatusMutex.withLock {
             activeTuns.update { currentTuns ->
+                if (!currentTuns.containsKey(tunnelId) && status != TunnelStatus.Starting) {
+                    Timber.d("Ignoring update for inactive tunnel $tunnelId")
+                    return@update currentTuns
+                }
                 val existingState = currentTuns[tunnelId] ?: TunnelState()
                 val newStatus = status ?: existingState.status
                 if (newStatus == TunnelStatus.Down) {
@@ -101,7 +111,7 @@ abstract class BaseTunnel(@ApplicationScope protected val applicationScope: Coro
             updateTunnelStatus(tunnelConf.id, TunnelStatus.Starting)
 
             val job =
-                applicationScope.launch {
+                applicationScope.launch(ioDispatcher) {
                     try {
                         tunnelStateFlow(tunnelConf).collect { status ->
                             updateTunnelStatus(tunnelConf.id, status)
@@ -121,13 +131,29 @@ abstract class BaseTunnel(@ApplicationScope protected val applicationScope: Coro
 
     override suspend fun stopTunnel(tunnelId: Int) {
         tunMutex.withLock {
+            val currentState = activeTuns.value[tunnelId]?.status ?: return@withLock
             updateTunnelStatus(tunnelId, TunnelStatus.Stopping)
-            tunJobs[tunnelId]?.cancel() // Triggers awaitClose to stop backend
+            tunJobs[tunnelId]?.cancel()
+
+            withTimeoutOrNull(STOP_TIMEOUT_MS) {
+                activeTunnels.first {
+                    !it.containsKey(tunnelId) || it[tunnelId]!!.status == TunnelStatus.Down
+                }
+            }
+                ?: run {
+                    Timber.w("Stop timeout for $tunnelId (was $currentState); forcing kill")
+                    forceStopTunnel(tunnelId)
+                }
         }
     }
 
     private fun cleanUpTunJob(tunnelId: Int) {
         Timber.d("Removing job for $tunnelId")
         tunJobs -= tunnelId
+    }
+
+    companion object {
+        const val STARTUP_TIMEOUT_MS: Long = 15_000L
+        const val STOP_TIMEOUT_MS: Long = 5_000L
     }
 }
