@@ -33,12 +33,11 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
-import com.zaneschepke.networkmonitor.NetworkMonitor
-import com.zaneschepke.wireguardautotunnel.core.tunnel.TunnelManager
 import com.zaneschepke.wireguardautotunnel.data.AppDatabase
 import com.zaneschepke.wireguardautotunnel.data.model.AppMode
 import com.zaneschepke.wireguardautotunnel.domain.model.TunnelConfig
 import com.zaneschepke.wireguardautotunnel.domain.repository.AppStateRepository
+import com.zaneschepke.wireguardautotunnel.domain.repository.TunnelRepository
 import com.zaneschepke.wireguardautotunnel.domain.sideeffect.GlobalSideEffect
 import com.zaneschepke.wireguardautotunnel.ui.LocalIsAndroidTV
 import com.zaneschepke.wireguardautotunnel.ui.LocalNavController
@@ -64,8 +63,8 @@ import com.zaneschepke.wireguardautotunnel.ui.screens.settings.appearance.Appear
 import com.zaneschepke.wireguardautotunnel.ui.screens.settings.appearance.display.DisplayScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.settings.appearance.language.LanguageScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.settings.dns.DnsSettingsScreen
-import com.zaneschepke.wireguardautotunnel.ui.screens.settings.globals.TunnelGlobalsScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.settings.integrations.AndroidIntegrationsScreen
+import com.zaneschepke.wireguardautotunnel.ui.screens.settings.lockdown.LockdownSettingsScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.settings.monitoring.TunnelMonitoringScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.settings.monitoring.logs.LogsScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.settings.monitoring.ping.PingTargetScreen
@@ -75,9 +74,9 @@ import com.zaneschepke.wireguardautotunnel.ui.screens.support.donate.crypto.Addr
 import com.zaneschepke.wireguardautotunnel.ui.screens.support.license.LicenseScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.TunnelsScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.config.ConfigScreen
+import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.settings.TunnelSettingsScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.sort.SortScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.splittunnel.SplitTunnelScreen
-import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.tunneloptions.TunnelOptionsScreen
 import com.zaneschepke.wireguardautotunnel.ui.theme.AlertRed
 import com.zaneschepke.wireguardautotunnel.ui.theme.OffWhite
 import com.zaneschepke.wireguardautotunnel.ui.theme.WireguardAutoTunnelTheme
@@ -99,8 +98,7 @@ import xyz.teamgravity.pin_lock_compose.PinManager
 class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var appStateRepository: AppStateRepository
-    @Inject lateinit var tunnelManager: TunnelManager
-    @Inject lateinit var networkMonitor: NetworkMonitor
+    @Inject lateinit var tunnelRepository: TunnelRepository
     @Inject lateinit var appDatabase: AppDatabase
 
     private lateinit var roomBackup: RoomBackup
@@ -331,7 +329,7 @@ class MainActivity : AppCompatActivity() {
                                                 }
                                                 entry<Route.Tunnels> { TunnelsScreen() }
                                                 entry<Route.Sort> { SortScreen() }
-                                                entry<Route.TunnelOptions> { key ->
+                                                entry<Route.TunnelSettings> { key ->
                                                     val viewModel =
                                                         hiltViewModel<
                                                             TunnelViewModel,
@@ -341,7 +339,7 @@ class MainActivity : AppCompatActivity() {
                                                                 factory.create(key.id)
                                                             }
                                                         )
-                                                    TunnelOptionsScreen(viewModel)
+                                                    TunnelSettingsScreen(viewModel)
                                                 }
                                                 entry<Route.SplitTunnel> { key ->
                                                     val viewModel =
@@ -388,9 +386,6 @@ class MainActivity : AppCompatActivity() {
                                                     AndroidIntegrationsScreen()
                                                 }
                                                 entry<Route.Dns> { DnsSettingsScreen() }
-                                                entry<Route.TunnelGlobals> { key ->
-                                                    TunnelGlobalsScreen(key.id)
-                                                }
                                                 entry<Route.ConfigGlobal> { key ->
                                                     val viewModel =
                                                         hiltViewModel<
@@ -414,6 +409,9 @@ class MainActivity : AppCompatActivity() {
                                                             }
                                                         )
                                                     SplitTunnelScreen(viewModel)
+                                                }
+                                                entry<Route.LockdownSettings> {
+                                                    LockdownSettingsScreen()
                                                 }
                                                 entry<Route.ProxySettings> { ProxySettingsScreen() }
                                                 entry<Route.Appearance> { AppearanceScreen() }
@@ -442,7 +440,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         WireGuardAutoTunnel.setUiActive(true)
-        networkMonitor.checkPermissionsAndUpdateState()
     }
 
     override fun onPause() {
@@ -452,6 +449,9 @@ class MainActivity : AppCompatActivity() {
 
     fun performBackup() =
         lifecycleScope.launch {
+            // reset active tuns before backup to prevent trying to start them without permission on
+            // restore
+            tunnelRepository.resetActiveTunnels()
             roomBackup
                 .database(appDatabase)
                 .backupLocation(RoomBackup.BACKUP_FILE_LOCATION_CUSTOM_DIALOG)

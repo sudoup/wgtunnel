@@ -1,4 +1,4 @@
-package com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.tunneloptions
+package com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.CallSplit
+import androidx.compose.material.icons.outlined.DataUsage
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.Icon
@@ -28,20 +29,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zaneschepke.wireguardautotunnel.R
 import com.zaneschepke.wireguardautotunnel.ui.LocalNavController
 import com.zaneschepke.wireguardautotunnel.ui.LocalSharedVm
-import com.zaneschepke.wireguardautotunnel.ui.common.button.ScaledSwitch
 import com.zaneschepke.wireguardautotunnel.ui.common.button.SurfaceRow
+import com.zaneschepke.wireguardautotunnel.ui.common.button.ThemedSwitch
 import com.zaneschepke.wireguardautotunnel.ui.common.label.GroupLabel
 import com.zaneschepke.wireguardautotunnel.ui.common.text.DescriptionText
 import com.zaneschepke.wireguardautotunnel.ui.navigation.Route
-import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.tunneloptions.components.QrCodeDialog
+import com.zaneschepke.wireguardautotunnel.ui.screens.tunnels.settings.components.QrCodeDialog
 import com.zaneschepke.wireguardautotunnel.ui.sideeffect.LocalSideEffect
+import com.zaneschepke.wireguardautotunnel.ui.theme.Disabled
 import com.zaneschepke.wireguardautotunnel.viewmodel.TunnelViewModel
 import org.orbitmvi.orbit.compose.collectSideEffect
 
 @Composable
-fun TunnelOptionsScreen(viewModel: TunnelViewModel) {
+fun TunnelSettingsScreen(viewModel: TunnelViewModel) {
     val navController = LocalNavController.current
     val sharedViewModel = LocalSharedVm.current
+
+    val sharedUiState by sharedViewModel.container.stateFlow.collectAsStateWithLifecycle()
 
     val tunnelState by viewModel.container.stateFlow.collectAsStateWithLifecycle()
 
@@ -81,7 +85,7 @@ fun TunnelOptionsScreen(viewModel: TunnelViewModel) {
                     )
                 },
                 trailing = {
-                    ScaledSwitch(
+                    ThemedSwitch(
                         checked = tunnel.isPrimaryTunnel,
                         onClick = { viewModel.togglePrimaryTunnel() },
                     )
@@ -90,9 +94,25 @@ fun TunnelOptionsScreen(viewModel: TunnelViewModel) {
             )
             SurfaceRow(
                 leading = {
-                    Icon(Icons.AutoMirrored.Outlined.CallSplit, contentDescription = null)
+                    Icon(
+                        Icons.AutoMirrored.Outlined.CallSplit,
+                        contentDescription = null,
+                        tint =
+                            if (sharedUiState.proxyEnabled) Disabled
+                            else MaterialTheme.colorScheme.onSurface,
+                    )
                 },
+                enabled = !sharedUiState.proxyEnabled,
                 title = stringResource(R.string.splt_tunneling),
+                description =
+                    if (sharedUiState.proxyEnabled) {
+                        {
+                            DescriptionText(
+                                stringResource(R.string.unavailable_in_mode),
+                                disabled = true,
+                            )
+                        }
+                    } else null,
                 onClick = { navController.push(Route.SplitTunnel(id = tunnel.id)) },
             )
         }
@@ -108,7 +128,7 @@ fun TunnelOptionsScreen(viewModel: TunnelViewModel) {
                     DescriptionText(stringResource(R.string.ddns_auto_update_description))
                 },
                 trailing = {
-                    ScaledSwitch(
+                    ThemedSwitch(
                         checked = tunnel.restartOnPingFailure,
                         onClick = { viewModel.setRestartOnPing(it) },
                     )
@@ -121,12 +141,42 @@ fun TunnelOptionsScreen(viewModel: TunnelViewModel) {
                 },
                 title = stringResource(R.string.prefer_ipv6_resolution),
                 trailing = {
-                    ScaledSwitch(
+                    ThemedSwitch(
                         checked = !tunnel.isIpv4Preferred,
-                        onClick = { viewModel.toggleIpv4Preferred() },
+                        onClick = { viewModel.setIpv4Preferred(!it) },
                     )
                 },
-                onClick = { viewModel.toggleIpv4Preferred() },
+                onClick = { viewModel.setIpv4Preferred(!tunnel.isIpv4Preferred) },
+            )
+            SurfaceRow(
+                leading = {
+                    Icon(
+                        Icons.Outlined.DataUsage,
+                        contentDescription = null,
+                        tint =
+                            if (sharedUiState.proxyEnabled) Disabled
+                            else MaterialTheme.colorScheme.onSurface,
+                    )
+                },
+                title = stringResource(R.string.metered_tunnel),
+                enabled = !sharedUiState.proxyEnabled,
+                description =
+                    if (sharedUiState.proxyEnabled) {
+                        {
+                            DescriptionText(
+                                stringResource(R.string.unavailable_in_mode),
+                                disabled = true,
+                            )
+                        }
+                    } else null,
+                trailing = {
+                    ThemedSwitch(
+                        checked = tunnel.isMetered,
+                        onClick = { viewModel.setMetered(it) },
+                        enabled = !sharedUiState.proxyEnabled,
+                    )
+                },
+                onClick = { viewModel.setMetered(!tunnel.isMetered) },
             )
         }
     }
