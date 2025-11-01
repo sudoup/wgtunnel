@@ -318,18 +318,6 @@ constructor(
             proxyUserspaceTunnel.setBackendMode(BackendMode.Inactive)
     }
 
-    private fun isVpnAuthorized(
-        mode: AppMode,
-        hasVpnPermission: () -> Boolean = { serviceManager.hasVpnPermission() },
-    ): Boolean {
-        return when (mode) {
-            AppMode.VPN,
-            AppMode.LOCK_DOWN -> hasVpnPermission()
-            AppMode.KERNEL,
-            AppMode.PROXY -> true
-        }
-    }
-
     suspend fun handleRestore() =
         withContext(ioDispatcher) {
             val settings = settingsRepository.getGeneralSettings()
@@ -337,19 +325,19 @@ constructor(
             val tunnels = tunnelsRepository.getAll()
             if (autoTunnelSettings.isAutoTunnelEnabled)
                 return@withContext restoreAutoTunnel(autoTunnelSettings)
-            if (isVpnAuthorized(settings.appMode)) {
-                when (val mode = settings.appMode) {
+            if (settings.appMode == AppMode.LOCK_DOWN) handleLockDownModeInit()
+            if (tunnels.any { it.isActive }) {
+                if (settings.appMode == AppMode.VPN && !serviceManager.hasVpnPermission())
+                    return@withContext localErrorEvents.emit(null to NotAuthorized())
+                when (settings.appMode) {
                     AppMode.VPN,
                     AppMode.PROXY,
                     AppMode.LOCK_DOWN -> {
-                        if (mode == AppMode.LOCK_DOWN) handleLockDownModeInit()
                         tunnels.firstOrNull { it.isActive }?.let { startTunnel(it) }
                     }
                     AppMode.KERNEL ->
                         tunnels.filter { it.isActive }.forEach { conf -> startTunnel(conf) }
                 }
-            } else {
-                localErrorEvents.emit(null to NotAuthorized())
             }
         }
 
@@ -367,17 +355,15 @@ constructor(
                 return@withContext restoreAutoTunnel(autoTunnelSettings)
             if (settings.isRestoreOnBootEnabled) {
                 tunnelsRepository.resetActiveTunnels()
-                if (isVpnAuthorized(settings.appMode)) {
-                    when (val mode = settings.appMode) {
-                        AppMode.LOCK_DOWN -> handleLockDownModeInit()
-                        AppMode.KERNEL,
-                        AppMode.VPN,
-                        AppMode.PROXY -> Unit
-                    }
-                    defaultTunnel?.let { startTunnel(it) }
-                } else {
-                    localErrorEvents.emit(null to NotAuthorized())
+                when (settings.appMode) {
+                    AppMode.LOCK_DOWN -> handleLockDownModeInit()
+                    AppMode.VPN ->
+                        if (!serviceManager.hasVpnPermission())
+                            return@withContext localErrorEvents.emit(null to NotAuthorized())
+                    AppMode.KERNEL,
+                    AppMode.PROXY -> Unit
                 }
+                defaultTunnel?.let { startTunnel(it) }
             }
         }
 
@@ -409,6 +395,46 @@ constructor(
                 }
             }
         }
+    }
+
+    suspend fun restartActiveTunnel(id: Int) =
+        withContext(ioDispatcher) {
+            val activeIds = activeTunnels.value.keys.toList()
+            if (activeIds.isEmpty()) return@withContext
+            if (!activeIds.contains(id)) return@withContext
+            val tunnel = tunnelsRepository.getById(id) ?: return@withContext
+            restartTunnel(tunnel)
+        }
+
+    suspend fun restartActiveTunnels() =
+        withContext(ioDispatcher) {
+            val activeIds = activeTunnels.value.keys.toList()
+            if (activeIds.isEmpty()) return@withContext
+
+            val tunnels = tunnelsRepository.getAll()
+            if (tunnels.isEmpty()) return@withContext
+
+            supervisorScope {
+                activeIds.forEach { id ->
+                    val tunnel =
+                        tunnels.find { it.id == id }
+                            ?: run {
+                                Timber.w("Tunnel config $id not found; skipping restart")
+                                return@forEach
+                            }
+                    restartTunnel(tunnel)
+                }
+            }
+        }
+
+    private suspend fun restartTunnel(tunnel: TunnelConfig) {
+        runCatching { stopTunnel(tunnel.id) }
+            .onFailure { e -> Timber.e(e, "Failed to stop tunnel ${tunnel.id} during restart") }
+
+        delay(RESTART_TUNNEL_DELAY)
+
+        runCatching { startTunnel(tunnel) }
+            .onFailure { e -> Timber.e(e, "Failed to restart tunnel ${tunnel.id}") }
     }
 
     private suspend fun handleDynamicDnsMonitoring(
@@ -527,5 +553,6 @@ constructor(
     companion object {
         const val BASE_BACKOFF = 30_000L
         const val MAX_BACKOFF_TIME = 300_000L
+        const val RESTART_TUNNEL_DELAY = 300L
     }
 }
